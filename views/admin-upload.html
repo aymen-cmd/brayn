@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Upload PDF - littleBraynBookSite</title>
+  <link rel="stylesheet" href="/public/css/styles.css">
+</head>
+<body>
+  <div class="admin">
+    <div class="container">
+      <div class="admin-header">
+        <h1>Upload Book Files</h1>
+        <div style="display:flex; gap: 10px">
+          <a class="btn btn-secondary" href="/admin/dashboard"><i class="fas fa-arrow-left"></i> Back to Dashboard</a>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top: 14px">
+        <form id="upload-form" onsubmit="submitUpload(event)" enctype="multipart/form-data">
+          <div class="field">
+            <label>Select Book ID</label>
+            <select id="book-id" name="bookId" required>
+              <option value="">-- choose --</option>
+            </select>
+          </div>
+
+          <div class="field">
+            <label>Cover Image</label>
+            <input id="cover" type="file" accept="image/*" name="cover" />
+          </div>
+
+          <div class="field">
+            <label>PDF File</label>
+            <input id="pdf" type="file" accept="application/pdf" name="pdf" />
+          </div>
+
+          <button type="submit" class="btn btn-primary"><i class="fas fa-cloud-arrow-up"></i> Upload Files</button>
+          <span id="status" class="muted" style="margin-left: 10px"></span>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    async function loadBooks() {
+      const res = await fetch('/api/books', { headers: { Accept: 'application/json' } });
+      const json = await res.json();
+      const sel = document.getElementById('book-id');
+      (json.books || []).forEach(b => {
+        const opt = document.createElement('option');
+        opt.value = b.id;
+        opt.textContent = `#${b.id} - ${b.title || 'Untitled'}`;
+        sel.appendChild(opt);
+      });
+    }
+
+    async function submitUpload(e) {
+      e.preventDefault();
+      const status = document.getElementById('status');
+      status.textContent = 'Uploading...';
+      const fd = new FormData(e.target);
+      const res = await fetch('/api/upload/file', {
+        method: 'POST',
+        body: fd
+      });
+      const json = await res.json();
+      if (res.ok) {
+        status.textContent = 'Uploaded successfully';
+        status.style.color = 'green';
+      } else {
+        status.textContent = json.error || 'Upload failed';
+        status.style.color = 'red';
+      }
+    }
+
+    loadBooks();
+
+    (async () => {
+      const res = await fetch('/api/auth/check');
+      const json = await res.json();
+      if (!json.isAdmin) location.replace('/admin/login');
+    })();
+  </script>
+  </body>
+</html>

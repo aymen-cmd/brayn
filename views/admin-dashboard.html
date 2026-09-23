@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin Dashboard - littleBraynBookSite</title>
+  <link rel="stylesheet" href="/public/css/styles.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+  <style>
+    .admin { padding: 24px 0 60px; }
+    .admin-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+    }
+    .admin-header h1 { font-family: "Playfair Display", Georgia, serif; color: #1a2a4a; }
+    .card { background: #ffffff; border: 1px solid #e6e8f1; border-radius: 14px; padding: 14px; box-shadow: 0 10px 30px rgba(30,42,80,0.06); }
+    .toolbar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-top: 12px;
+      flex-wrap: wrap;
+    }
+    .toolbar input { padding: 10px 12px; border-radius: 10px; border: 1px solid #e6e8f1; background: #fff; min-width: 240px; }
+    .toolbar .btn { padding: 10px 12px; border-radius: 10px; border: 0; font-weight: 700; }
+    table { width: 100%; margin-top: 14px; border-collapse: collapse; }
+    th, td { text-align: left; padding: 10px; border-bottom: 1px solid #e6e8f1; }
+    th { color: #5c6474; font-size: 13px; text-transform: uppercase; letter-spacing: 0.08em; }
+    td img { width: 44px; height: 64px; object-fit: cover; border-radius: 8px; border: 1px solid #e6e8f1; }
+    .pill { display: inline-flex; gap: 6px; padding: 4px 8px; border-radius: 999px; background: #eef1f8; color: #1a2a4a; font-size: 12px; font-weight: 700; }
+    .muted { color: #5c6474; }
+  </style>
+</head>
+<body onload="loadBooks()">
+  <div class="admin">
+    <div class="container">
+      <div class="admin-header">
+        <div>
+          <h1>Admin Dashboard</h1>
+          <p class="muted">Manage library books and uploads.</p>
+        </div>
+        <div style="display:flex; gap: 10px">
+          <a class="btn btn-secondary" href="/"><i class="fas fa-home"></i> Site</a>
+          <button class="btn btn-primary" onclick="logout()"><i class="fas fa-right-from-bracket"></i> Logout</button>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:14px">
+        <div class="toolbar">
+          <input id="q" placeholder="Search title or author" oninput="loadBooks()"/>
+          <select id="genre-filter" onchange="loadBooks()" style="padding:10px;border-radius:10px;border:1px solid #e6e8f1">
+            <option value="">All genres</option>
+          </select>
+          <button class="btn btn-primary" onclick="openBookForm()"><i class="fas fa-plus"></i> Add Book</button>
+          <a class="btn btn-secondary" href="/admin/upload"><i class="fas fa-cloud-arrow-up"></i> Upload Files</a>
+        </div>
+
+        <div style="overflow:auto">
+          <table>
+            <thead>
+              <tr>
+                <th>Cover</th><th>Title</th><th>Author</th><th>Genre</th><th>Featured</th><th>New Release</th><th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="books-table"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let editingId = null;
+
+    async function loadBooks() {
+      const q = document.getElementById('q').value.trim();
+      const genre = document.getElementById('genre-filter').value;
+      const url = new URL('/api/books', location.origin);
+      if (q) url.searchParams.set('q', q);
+      if (genre) url.searchParams.set('genre', genre);
+
+      const data = await (await fetch(url.toString(), { headers: { Accept: 'application/json' } })).json();
+      const tbody = document.getElementById('books-table');
+      tbody.innerHTML = '';
+      if (!data.books.length) {
+        tbody.innerHTML = `<tr><td colspan="7" class="muted">No books found.</td></tr>`;
+        return;
+      }
+      const genres = Array.from(new Set(data.books.map(b => b.genre).filter(Boolean)));
+      const sel = document.getElementById('genre-filter');
+      const current = sel.value;
+      sel.innerHTML = `<option value="">All genres</option>` + genres.map(g => `<option value="${g}">${g}</option>`).join('');
+      sel.value = current;
+
+      data.books.forEach(book => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td><img src="${book.coverUrl ? (book.coverUrl.startsWith('data:') ? book.coverUrl : `/covers/${book.coverUrl}`) : '/covers/placeholder.png'}" alt=""/></td>
+          <td>${book.title}</td>
+          <td>${book.author}</td>
+          <td>${book.genre || ''}</td>
+          <td><span class="pill">${book.featured ? 'Yes' : 'No'}</span></td>
+          <td><span class="pill">${book.newRelease ? 'Yes' : 'No'}</span></td>
+          <td>
+            <button class="btn btn-secondary" onclick="editBook(${book.id})">Edit</button>
+            <button class="btn btn-primary" onclick="deleteBook(${book.id})">Delete</button>
+          </td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    function openBookForm() {
+      editingId = null;
+      const fields = { title: '', author: '', description: '', contentSnapshot: '', genre: '', featured: false, newRelease: false, pageCount: 0 };
+      showForm(fields);
+    }
+
+    function editForm(bookId) {
+      const matches = document.querySelectorAll('#books-table tr');
+      findBook(bookId);
+    }
+
+    async function findBook(bookId) {
+      const data = await (await fetch(`/api/books/${bookId}`, { headers: { Accept: 'application/json' } })).json();
+      if (!data.book) return alert('Book not found');
+      editingId = bookId;
+      const book = data.book;
+      showForm(book);
+      return book;
+    }
+
+    async function editBook(id) {
+      const book = await findBook(id);
+      showForm(book);
+    }
+
+    async function deleteBook(id) {
+      if (!confirm('Delete this book?')) return;
+      const res = await fetch(`/api/books/${id}`, { method: 'DELETE', headers: { Accept: 'application/json' } });
+      if (res.ok) {
+        loadBooks();
+      } else {
+        alert('Failed to delete');
+      }
+    }
+
+    async function saveBook(e) {
+      e.preventDefault();
+      const fd = new FormData(e.target);
+      const payload = {
+        title: fd.get('title'),
+        author: fd.get('author'),
+        description: fd.get('description'),
+        contentSnapshot: fd.get('contentSnapshot'),
+        genre: fd.get('genre'),
+        featured: !!fd.get('featured'),
+        newRelease: !!fd.get('newRelease'),
+        pageCount: Number(fd.get('pageCount') || 0),
+      };
+      const method = editingId ? 'PUT' : 'POST';
+      const url = editingId ? `/api/books/${editingId}` : '/api/books';
+      const res = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const json = await res.json();
+      if (!res.ok) return alert(json.error || 'Save failed');
+      document.getElementById('book-form-modal').remove();
+      loadBooks();
+    }
+
+    function showForm(fields) {
+      const modal = document.createElement('div');
+      modal.id = 'book-form-modal';
+      modal.style.cssText = 'position:fixed;inset:0;background:rgba(20,24,50,0.45);display:grid;place-items:center;z-index:300;padding:24px';
+      modal.innerHTML = `
+        <div class="card" style="width:min(560px,96vw);max-height:92vh;overflow:auto">
+          <h2 style="color:#1a2a4a;font-family:Playfair Display,serif">${fields.id ? 'Edit' : 'Add'} Book</h2>
+          <form class="form" onsubmit="saveBook(event)" style="margin-top:10px">
+            <input name="title" value="${fields.title || ''}" placeholder="Title" required/>
+            <input name="author" value="${fields.author || ''}" placeholder="Author" required/>
+            <input name="genre" value="${fields.genre || ''}" placeholder="Genre"/>
+            <input name="pageCount" type="number" min="1" value="${fields.pageCount || ''}" placeholder="Page count"/>
+            <textarea name="description" rows="4" placeholder="Description" style="border-radius:10px;padding:10px;border:1px solid #e6e8f1">${fields.description || ''}</textarea>
+            <textarea name="contentSnapshot" rows="6" placeholder="Book text / content to read" style="border-radius:10px;padding:10px;border:1px solid #e6e8f1">${fields.contentSnapshot || ''}</textarea>
+            <label style="display:inline-flex;gap:8px;align-items:center">
+              <input type="checkbox" name="featured" ${fields.featured ? 'checked' : ''} /> Featured
+            </label>
+            <label style="display:inline-flex;gap:8px;align-items:center">
+              <input type="checkbox" name="newRelease" ${fields.newRelease ? 'checked' : ''} /> New Release
+            </label>
+            <button type="submit" class="btn btn-primary" style="justify-content:center">Save</button>
+          </form>
+        </div>
+      `;
+      modal.addEventListener('click', (e) => {
+        if (e.target === modal) modal.remove();
+      });
+      document.body.appendChild(modal);
+    }
+
+    async function logout() {
+      await fetch('/api/auth/logout', { method: 'POST' });
+      location.replace('/admin/login');
+    }
+
+    (async () => {
+      const res = await fetch('/api/auth/check');
+      const json = await res.json();
+      if (!json.isAdmin) location.replace('/admin/login');
+    })();
+  </script>
+</body>
+</html>
